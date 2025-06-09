@@ -3,11 +3,11 @@
 
 # Fetching API Through GET Requests
 import requests
-# Parsing The API JSON Response
+# API resonds with JSON which needs to be parsed
 import json
 # Accessing CLI arguments
 import sys 
-# For Conveniently Managing .env
+# Conveniently managing .env
 import dotenv
 
 
@@ -26,25 +26,31 @@ import dotenv
                                                                         
 
 def credentials(key):
-    #NOTE: You need to seek(0) in order to read the file contets. 
-    # Appending will still work regardless which is really confusing tbh
+    # a+ naturally places the seek position at the end of the file for appending
+    # However this also means that reading the file always returns nothing
+    # You need to seek(0) in order to read the file for every append. Confused, me too
     with open(".env", "a+") as file:
         # Making sure reading happens from the top to bottom and not bottom to bottom (seriously what the hell?)
         file.seek(0)
         for line in file.readlines():
-            # If credential is found in .env
+            # If given credential key is found in .env
             if line.startswith(key):
+                # Return the value of that key if found
                 return dotenv.get_key(".env", key)
         # If the credential is not found in .env
         print(f"No value for {key} found in .env")
+        # Ask the user for that missing value and create a new key for it
         value = input(f"Please enter the value for {key}: ")
-        file.write(f'\n{key}="{value}"') #INFO: I could use set_key() from dotenv, but that would be too easy
+        # Append the key value pair to .env
+        file.write(f'\n{key}="{value}"')
+        # Get the same key from .env
         return dotenv.get_key(".env", key)
-        #INFO: Also works but the above works for now
-        #return value
 
 
+
+# Updating Credentials (city and API key for now)
 def update_credentials(key, value):
+    # Appends to .env
     dotenv.set_key(".env", key, value)
     
 
@@ -56,9 +62,13 @@ def update_credentials(key, value):
 #                                 |___/                    
 
 
-# Takes parameter for the human readable stop name, the default being the first arguent in CLI and returns the id of said stop name
+# Takes one parameter, the bus stop name and returns the stop ID needed for the other API's to work
 def get_stop_id(stop_name):
+    # GET (requests library) the API in a unicode text format which is json with the `.text` method (also from requests library)
+    # Deserialize this json text object into a Python dictionary
     API_RESPONSE = json.loads(requests.get(f'''https://api.resrobot.se/v2.1/location.name?input={credentials("CITY")} {stop_name}&format=json&accessId={credentials("API_KEY")}''').text)
+    # Trafiklab API gives errors as an API response which cannot be parsed
+    # Thus we need to check every time if `errorText`, the useful part of such a response is present
     if "errorText" not in API_RESPONSE:
         if "stopLocationOrCoordLocation" in API_RESPONSE:
             stop_id = API_RESPONSE["stopLocationOrCoordLocation"][0]["StopLocation"]["extId"]
@@ -69,27 +79,36 @@ def get_stop_id(stop_name):
         print(f"Trafiklab API gave a response containing only errors. The error being: {API_RESPONSE["errorText"]}")
 
 
-# TrafikLab Timetable API only require the origin stop id
-# A lot of scoping to parse the huge json response
+
+# TrafikLab Timetable API only requires the origin stop id
 def bus_timetable(origin):
     API_RESPONSE = json.loads(requests.get(f'''https://api.resrobot.se/v2.1/departureBoard?id={get_stop_id(origin)}&format=json&accessId={credentials("API_KEY")}''').text)
     if "errorText" not in API_RESPONSE:
         if "Departure" in API_RESPONSE:
+            # API message always includes technical information which isn't needed
+            # Being explicit about what is happening is my reasoning for this decision
             timetable = API_RESPONSE["Departure"]
             print()
-            # "".join(origin).capitalize()) assuming that the user does not misspell the bus stop and making it capitalizing it just in case
+            # "".join(origin).capitalize()) assumes that the user does not misspell the bus stop and uses it as the displayed bus stop (capitalized)
             print("Showing timetable for:", "".join(origin).capitalize())
             # Print all stops heading towards Resecentrum
             print()
             print("Heading towards Resecentrum")
             for stop in timetable:
+                # It is useful to separate busses heading towards or away from the central station
+                # This is indicated by the directionFlag for Trafiklab API
                 if stop["directionFlag"] == "2":
+                    # Print all busses + time heading towards the central station
                     print(stop["time"], stop["ProductAtStop"]["line"], stop["direction"])
             # Print all stops heading away from Resecentrum
             print()
+            print("Showing timetable for:", "".join(origin).capitalize())
+            print()
             print("Heading away from Resecentrum")
             for stop in timetable:
+                # 1 indicates that the bus is heading away from the central station
                 if stop["directionFlag"] == "1":
+                    # Print all busses + time heading away from the central station
                     print(stop["time"], stop["ProductAtStop"]["line"], stop["direction"])
             return timetable
         else:
@@ -101,9 +120,13 @@ def bus_timetable(origin):
 def bus_route(origin, destination):
     API_RESPONSE = json.loads(requests.get(f'''https://api.resrobot.se/v2.1/trip?format=json&originId={get_stop_id(origin)}&destId={get_stop_id(destination)}&passlist=true&showPassingPoints=true&accessId={credentials("API_KEY")}''').text)
     if "errorText" not in API_RESPONSE:
+        # Checking if the API response has any trips at all. If not, then tell the user that there probably isn't any route available for the given stop
         if "Trip" in API_RESPONSE:
             for stops in API_RESPONSE["Trip"]:
+                # Printing {origin} --> {bus stop name} ({bus line})
+                #FIX: Intermittent "line" does not exist and thus cannot run for loop for parsing. Need to catch it again to fix it
                 print(stops["Origin"]["name"], "-->", stops["Destination"]["name"], "(" + stops["LegList"]["Leg"][0]["Product"][0]["line"] + ")")
+                # Printing {departure time} --> {arrival time}
                 print(stops["Origin"]["time"], "-->", stops["Destination"]["time"])
         else:
             print(f'Trafiklab API response gave no routes most likely indicating that there isn\'t arent routes available for "{origin}"')
@@ -126,22 +149,29 @@ def bus_route(origin, destination):
 
 
 # A list of all CLI arguments
-POSSIBLE_TOP_LEVEL_CLI_ARGUMENTS = ["change", "ändra", "from", "från", "help"]
+POSSIBLE_TOP_LEVEL_CLI_ARGUMENTS = ["change", "ändra", "from", "från", "help", "--help"]
 
 
+# Function for asking the user for a new API key and updating .env to reflect these changes
 def parse_cli_for_changing_api_key():
+    # Checking if any argument was provided at all, otherwise IndexError
     if len(sys.argv) >= 2: 
+        # Checks if the first CLI argument (actually second, dont worry about it) is recognizable
         if sys.argv[1] == "change" or sys.argv[1] == "ändra":
+            # Check if second CLI argument is recognizable
             if sys.argv[2] == "key" or sys.argv[2] == "nyckel":
+                # Initializing `value` for the while loop
                 value = " "
                 ask = "Please input your API key without any spaces: "
+                # If the user gives a key with spaces, give a different message until the key is acceptable
                 while " " in value:
                     value = input(ask)
                     if " " in value:
                         ask = "Try again without spaces: "
                 update_credentials("API_KEY", value)
-        
 
+        
+# Asking the user for a new city and updating .env to reflect these changes
 def parse_cli_for_changing_city():
     # Checking if any argument was provided at all, otherwise IndexError
     if len(sys.argv) >= 2: 
@@ -157,10 +187,10 @@ def parse_cli_for_changing_city():
 
 
 def parse_cli_for_timetable():
-    # Checking if any argument was provided at all, otherwise IndexError
     if len(sys.argv) >= 2: 
         # Ensuring that bus stop isn't a recognized command
-        if  len(sys.argv) >= 2 and sys.argv[1] not in POSSIBLE_TOP_LEVEL_CLI_ARGUMENTS:
+        if len(sys.argv) >= 2 and sys.argv[1] not in POSSIBLE_TOP_LEVEL_CLI_ARGUMENTS:
+            # call and pass all CLI arguments after the first to the function
             bus_timetable(sys.argv[1:])
 
 
@@ -170,7 +200,6 @@ def parse_cli_for_route():
         if sys.argv[1] == "from" or sys.argv[1] == "från":
             # Checking if any command line argument is "to" and assume that everything after is the <destination>
             for i, element in enumerate(sys.argv):
-                #INFO: I could use `continue` instead of slices, however slices are important to know
                 if element == "to" or element == "till":
                     # Excluding first and second argument, "linj.py" and "from" respectively since they are not part of the user inputed bus stop name
                     origin = sys.argv[2:i]
@@ -183,7 +212,9 @@ def parse_cli_for_route():
 
 def parse_cli_for_help():
     # If no CLI arguments are provided, then show help page or if user explicitly wants help
-    if len(sys.argv) <= 2 or sys.argv[1] == "help" or sys.argv[1] == "--help":
+    # Check and run if there are not arguments provided at all, 1 because ./linj is the first argument
+    # Also run if user provides "help" or "--help"
+    if len(sys.argv) == 1 or sys.argv[1] == "help" or sys.argv[1] == "--help":
         print("""
 COMMANDS:
 
@@ -223,6 +254,7 @@ NOTES:
 # |_|  |_|\__,_|_|_| |_| |_|   \__,_|_| |_|\___|\__|_|\___/|_| |_|
 
 
+# Making it clear what is happening even though I'm not using any module files
 if __name__ == "__main__":
     parse_cli_for_timetable()
     parse_cli_for_changing_city()

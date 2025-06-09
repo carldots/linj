@@ -1,4 +1,4 @@
-# linj
+## linj
 
 ## Dependencies (also listed in the flake.nix)
 - requests
