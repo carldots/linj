@@ -1,0 +1,231 @@
+#!/usr/bin/env python3
+
+# Fetching API Through GET Requests
+import requests
+# Parsing The API JSON Response
+import json
+# Accessing CLI arguments
+import sys 
+# For Conveniently Managing .env
+import dotenv
+
+
+
+#  ____  _             _             
+# / ___|| |_ ___  _ __(_)_ __   __ _ 
+# \___ \| __/ _ \| '__| | '_ \ / _` |
+#  ___) | || (_) | |  | | | | | (_| |
+# |____/ \__\___/|_|  |_|_| |_|\__, |
+#                              |___/ 
+#   ____              _            _   _       _     
+#  / ___|_ __ ___  __| | ___ _ __ | |_(_) __ _| |___ 
+# | |   | '__/ _ \/ _` |/ _ \ '_ \| __| |/ _` | / __|
+# | |___| | |  __/ (_| |  __/ | | | |_| | (_| | \__ \
+#  \____|_|  \___|\__,_|\___|_| |_|\__|_|\__,_|_|___/
+#                                                    
+                                                                        
+
+def credentials(key):
+    #NOTE: You need to seek(0) in order to read the file contets. 
+    # Appending will still work regardless which is really confusing tbh
+    with open(".env", "a+") as file:
+        # Making sure reading happens from the top to bottom and not bottom to bottom (seriously what the hell?)
+        file.seek(0)
+        for line in file.readlines():
+            # If credential is found in .env
+            if line.startswith(key):
+                return dotenv.get_key(".env", key)
+        # If the credential is not found in .env
+        print(f"No value for {key} found in .env")
+        value = input(f"Please enter the value for {key}: ")
+        file.write(f'\n{key}="{value}"') #INFO: I could use set_key() from dotenv, but that would be too easy
+        return dotenv.get_key(".env", key)
+        #INFO: Also works but the above works for now
+        #return value
+
+
+def update_credentials(key, value):
+    dotenv.set_key(".env", key, value)
+    
+
+#  _____    _       _     _                  _    ____ ___ 
+# |  ___|__| |_ ___| |__ (_)_ __   __ _     / \  |  _ \_ _|
+# | |_ / _ \ __/ __| '_ \| | '_ \ / _` |   / _ \ | |_) | | 
+# |  _|  __/ || (__| | | | | | | | (_| |  / ___ \|  __/| | 
+# |_|  \___|\__\___|_| |_|_|_| |_|\__, | /_/   \_\_|  |___|
+#                                 |___/                    
+
+
+# Takes parameter for the human readable stop name, the default being the first arguent in CLI and returns the id of said stop name
+def get_stop_id(stop_name):
+    API_RESPONSE = json.loads(requests.get(f'''https://api.resrobot.se/v2.1/location.name?input={credentials("CITY")} {stop_name}&format=json&accessId={credentials("API_KEY")}''').text)
+    if "errorText" not in API_RESPONSE:
+        if "stopLocationOrCoordLocation" in API_RESPONSE:
+            stop_id = API_RESPONSE["stopLocationOrCoordLocation"][0]["StopLocation"]["extId"]
+            return stop_id
+        else:
+            print(f'Trafiklab API response gave no stop id most likely indicating that there isn\'t any id available for "{stop_name}"')
+    else:
+        print(f"Trafiklab API gave a response containing only errors. The error being: {API_RESPONSE["errorText"]}")
+
+
+# TrafikLab Timetable API only require the origin stop id
+# A lot of scoping to parse the huge json response
+def bus_timetable(origin):
+    API_RESPONSE = json.loads(requests.get(f'''https://api.resrobot.se/v2.1/departureBoard?id={get_stop_id(origin)}&format=json&accessId={credentials("API_KEY")}''').text)
+    if "errorText" not in API_RESPONSE:
+        if "Departure" in API_RESPONSE:
+            timetable = API_RESPONSE["Departure"]
+            print()
+            # "".join(origin).capitalize()) assuming that the user does not misspell the bus stop and making it capitalizing it just in case
+            print("Showing timetable for:", "".join(origin).capitalize())
+            # Print all stops heading towards Resecentrum
+            print()
+            print("Heading towards Resecentrum")
+            for stop in timetable:
+                if stop["directionFlag"] == "2":
+                    print(stop["time"], stop["ProductAtStop"]["line"], stop["direction"])
+            # Print all stops heading away from Resecentrum
+            print()
+            print("Heading away from Resecentrum")
+            for stop in timetable:
+                if stop["directionFlag"] == "1":
+                    print(stop["time"], stop["ProductAtStop"]["line"], stop["direction"])
+            return timetable
+        else:
+            print(f'Trafiklab API response gave no bus stops most likely indicating that there isn\'t any timetable available for "{origin}"')
+    else:
+        print(f"Trafiklab API gave a response containing only errors. The error being: {API_RESPONSE["errorText"]}")
+
+
+def bus_route(origin, destination):
+    API_RESPONSE = json.loads(requests.get(f'''https://api.resrobot.se/v2.1/trip?format=json&originId={get_stop_id(origin)}&destId={get_stop_id(destination)}&passlist=true&showPassingPoints=true&accessId={credentials("API_KEY")}''').text)
+    if "errorText" not in API_RESPONSE:
+        if "Trip" in API_RESPONSE:
+            for stops in API_RESPONSE["Trip"]:
+                print(stops["Origin"]["name"], "-->", stops["Destination"]["name"], "(" + stops["LegList"]["Leg"][0]["Product"][0]["line"] + ")")
+                print(stops["Origin"]["time"], "-->", stops["Destination"]["time"])
+        else:
+            print(f'Trafiklab API response gave no routes most likely indicating that there isn\'t arent routes available for "{origin}"')
+    else:
+        print(f"Trafiklab API gave a response containing only errors. The error being: {API_RESPONSE["errorText"]}")
+
+
+#  ____                _                ____ _     ___ 
+# |  _ \ __ _ _ __ ___(_)_ __   __ _   / ___| |   |_ _|
+# | |_) / _` | '__/ __| | '_ \ / _` | | |   | |    | | 
+# |  __/ (_| | |  \__ \ | | | | (_| | | |___| |___ | | 
+# |_|   \__,_|_|  |___/_|_| |_|\__, |  \____|_____|___|
+#                              |___/                   
+#     _                                         _       
+#    / \   _ __ __ _ _   _ _ __ ___   ___ _ __ | |_ ___ 
+#   / _ \ | '__/ _` | | | | '_ ` _ \ / _ \ '_ \| __/ __|
+#  / ___ \| | | (_| | |_| | | | | | |  __/ | | | |_\__ \
+# /_/   \_\_|  \__, |\__,_|_| |_| |_|\___|_| |_|\__|___/
+#              |___/                                    
+
+
+# A list of all CLI arguments
+POSSIBLE_TOP_LEVEL_CLI_ARGUMENTS = ["change", "ändra", "from", "från", "help"]
+
+
+def parse_cli_for_changing_api_key():
+    if len(sys.argv) >= 2: 
+        if sys.argv[1] == "change" or sys.argv[1] == "ändra":
+            if sys.argv[2] == "key" or sys.argv[2] == "nyckel":
+                value = " "
+                ask = "Please input your API key without any spaces: "
+                while " " in value:
+                    value = input(ask)
+                    if " " in value:
+                        ask = "Try again without spaces: "
+                update_credentials("API_KEY", value)
+        
+
+def parse_cli_for_changing_city():
+    # Checking if any argument was provided at all, otherwise IndexError
+    if len(sys.argv) >= 2: 
+        if sys.argv[1] == "change" or sys.argv[1] == "ändra":
+            if sys.argv[2] == "city" or sys.argv[2] == "stad":
+                value = " "
+                ask = "Please input your city without any spaces: "
+                while " " in value:
+                    value = input(ask)
+                    if " " in value:
+                        ask = "Try again without spaces: "
+                update_credentials("CITY", value)
+
+
+def parse_cli_for_timetable():
+    # Checking if any argument was provided at all, otherwise IndexError
+    if len(sys.argv) >= 2: 
+        # Ensuring that bus stop isn't a recognized command
+        if  len(sys.argv) >= 2 and sys.argv[1] not in POSSIBLE_TOP_LEVEL_CLI_ARGUMENTS:
+            bus_timetable(sys.argv[1:])
+
+
+def parse_cli_for_route():
+    # Checking if any argument was provided at all, otherwise IndexError
+    if len(sys.argv) >= 2: 
+        if sys.argv[1] == "from" or sys.argv[1] == "från":
+            # Checking if any command line argument is "to" and assume that everything after is the <destination>
+            for i, element in enumerate(sys.argv):
+                #INFO: I could use `continue` instead of slices, however slices are important to know
+                if element == "to" or element == "till":
+                    # Excluding first and second argument, "linj.py" and "from" respectively since they are not part of the user inputed bus stop name
+                    origin = sys.argv[2:i]
+                    # Excluding `1 +` "to" from destination since it isn't part of the user inputed bus stop name
+                    destination = sys.argv[1 + i:]
+                    # + 1 to exclude the word "to" from being included in the slice output
+                    bus_route(origin, destination)
+                    break
+
+
+def parse_cli_for_help():
+    # If no CLI arguments are provided, then show help page or if user explicitly wants help
+    if len(sys.argv) <= 2 or sys.argv[1] == "help" or sys.argv[1] == "--help":
+        print("""
+COMMANDS:
+
+  help, --help
+    Description: display help
+
+  change key
+    Description: change the API key
+
+  ändra nyckel
+    Description: ändra API nyckel
+
+  change city
+    Description: change city
+
+  ändra stad
+    Description: ändra stad
+
+  from <origin> to <destination>
+    Description: show route between two stops
+
+  från <origin> till <destination>
+    Description: visa rut mellan två hållplatser
+
+  <bus_stop_name>
+    Description: when none of the above are specified, assume timetable. Shows timetable for the ggiven stop
+
+NOTES:
+  - City name and API key are stored in a local `.env` file and can be set using the commands above.
+        """)
+
+
+#  __  __       _         _____                 _   _             
+# |  \/  | __ _(_)_ __   |  ___|   _ _ __   ___| |_(_) ___  _ __  
+# | |\/| |/ _` | | '_ \  | |_ | | | | '_ \ / __| __| |/ _ \| '_ \ 
+# | |  | | (_| | | | | | |  _|| |_| | | | | (__| |_| | (_) | | | |
+# |_|  |_|\__,_|_|_| |_| |_|   \__,_|_| |_|\___|\__|_|\___/|_| |_|
+
+
+if __name__ == "__main__":
+    parse_cli_for_timetable()
+    parse_cli_for_changing_city()
+    parse_cli_for_route()
+    parse_cli_for_changing_api_key()
+    parse_cli_for_help()
