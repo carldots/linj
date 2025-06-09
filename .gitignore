@@ -2,5 +2,6 @@
 !linj
 !flake.nix
 !flake.lock
+!.envrc
 !README.md
 !.gitignore
