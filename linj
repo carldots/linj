@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+
 # Fetching API Through GET Requests
 import requests
 # Parsing The API JSON Response
@@ -8,7 +9,6 @@ import json
 import sys 
 # For Conveniently Managing .env
 import dotenv
-
 
 
 #  ____  _             _             
