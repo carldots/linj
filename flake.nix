@@ -13,7 +13,8 @@
   }: let
     pkgs = nixpkgs.legacyPackages."x86_64-linux";
   in {
-    # A devshell gives you the ability to `nix develop`, enter a code container with dependencies
+    # A devshell gives you the ability to `nix develop`
+    # Enter a code development environment with all your dependencies
     devShells."x86_64-linux".default = pkgs.mkShell {
       packages = [
         pkgs.python3
